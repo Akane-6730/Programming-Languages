@@ -41,7 +41,7 @@ datatype typ = Anything
    character. Use List.filter, Char.isUpper, and String.sub to make a 1-2 line solution. *)
 
 fun only_capitals str_lst =
-    List.filter (fn str => Char.isUpper(String.sub(str, 0))) str_lst
+    List.filter (fn str => Char.isUpper (String.sub (str, 0))) str_lst
 
 (* 2. Write a function longest_string1 that takes a string list and returns the longest string in the list.
    If the list is empty, return"". In the case of a tie, return the string closest to the beginning of the
@@ -165,27 +165,20 @@ fun check_pat p =
    rules for what patterns match what values, and what bindings they produce. These are hints: We are
    not requiring all_answers and ListPair.zip here, but they make it easier. *)
 
-fun match (v, p) =
-    case p of
-        Wildcard => SOME []
-      | Variable s => SOME [(s, v)]
-      | UnitP => (case v of Unit => SOME []
-                          | _ => NONE)
-      | ConstP i => (case v of
-                         Const v_i => if i = v_i then SOME [] else NONE
-                       | _ => NONE)
-      | TupleP ps => (case v of
-                          Tuple vs => if List.length ps = List.length vs
-                                      then all_answers (fn (p, v) => match (v, p)) (ListPair.zip (ps, vs))
-                                      else NONE
-                        | _ => NONE)
-      | ConstructorP (s1, p) => (case v of
-                                     Constructor (s2, v) => if s1 = s2
-                                                            then case match (v, p) of
-                                                                     NONE => NONE
-                                                                   | SOME bindings => SOME bindings
-                                                            else NONE
-                                   | _ => NONE)
+fun match (valu,pat) =
+    case (valu,pat) of
+        (_,Wildcard)    => SOME []
+      | (_,Variable(s)) => SOME [(s,valu)]
+      | (Unit,UnitP)    => SOME []
+      | (Const i, ConstP j)    => if i=j then SOME [] else NONE
+      | (Tuple(vs),TupleP(ps)) => if length vs = length ps
+                                  then all_answers match (ListPair.zip(vs,ps))
+                                  else NONE
+      | (Constructor(s1,v), ConstructorP(s2,p)) => if s1=s2
+                                                   then match(v,p)
+                                                   else NONE
+      | _ => NONE
+
 
 (* 12. Write a function first_match that takes a value and a list of patterns and returns a
    (string * valu) list option, namely NONE if no pattern in the list matches or SOME lst where
