@@ -1,0 +1,141 @@
+* Core Concepts
+** Thunk
+- A function with 0 argument
+- To *delay* the evaluation of an expression, you can thunk it:
+  - ~e~ => ~(lambda () e)~
+  - To call it, use parenthesis: ~((lambda () e))~
+  - Usually, we use define to name a thunk, common pattern:
+    #+BEGIN_SRC racket
+      (define my-thunk (lambda () e))  ; Define
+      (my-thunk)                       ; Evaluate
+    #+END_SRC
+
+** Lazy Evaluation with Delay & Force
+*** Delay
+- Creates a *promise*: ~(delay e)~
+- Returns *mutable pair* structure:
+  - ~car~: state flag (#f = unevaluated, #t = evaluated)
+  - ~cdr~: a *thunk* storing ~(lambda () e)~ (before evaluation) or result (after evaluation)
+- Does ~not~ evaluate ~e~ immediately
+- Implementation:
+  #+begin_src racket
+    (define (my-delay f)
+      (mcons #f f))
+  #+end_src
+
+*** Force
+- Triggers evaluation: ~(force promise)~
+- Behavior:
+  1. If ~car~ = #t: returns cached ~cdr~ value immediately
+  2. If ~car~ = #f:
+     - Evaluates thunk ~((cdr promise))~
+     - Mutates ~car~ to #t and ~cdr~ to result
+     - Returns result
+- Ensures single evaluation: repeated calls return cached value and meanwhile computes the result, update the boolean value
+- Implementation:
+  #+begin_src racket
+    (define (my-force p)  ; promise
+      (if (mcar p)        ; Already computed?
+          (mcdr p)        ; Yes: return cached result
+          (begin          ; No: compute now
+            (set-mcar! p #t)          ; Mark as computed
+            (set-mcdr! p ((mcdr p)))  ; Computation happens here! call the thunk and store result
+            (mcdr p))))               ; Return the new result
+  #+end_src
+
+*** Common Pattern
+- Use ~let~ to name promises for clean access:
+  #+BEGIN_SRC racket
+    (let ([p (delay expensive-computation)])  ; Create promise once
+      (when (need-result? ...)
+        (use-value (force p)))                ; Force by name
+  #+END_SRC
+  - Avoids recomputing ~delay~ expression (returns same promise)
+  - Enables multiple ~force~ calls with single reference
+
+*** Examples
+#+begin_src racket
+  (define (my-mult x y)
+    (cond [(= x 0) 0]
+          [(= x 1) y]
+          [#t (+ y (my-mult (- x 1) y))]))
+  ;; if x = 0, we don't need to compute y, so we may try to thunk it
+  (define (my-mult x y-thunk)
+    (cond [(= x 0) 0]
+          [(= x 1) (y-thunk)]
+          [#t (+ (y-thunk) (my-mult (- x 1) y-thunk))]))
+  ;; but now y-thunk will be evaluated on every recursive call, which is terrible
+
+  ;; use delay and force
+  ;; (my-mult e1 (lambda () (my-force y-promise))) , what is y-promise?
+  (my-mult e1
+           (let (y-promise (my-delay (lambda () e2)))
+             (lambda () (my-force y-promise))))
+  
+  ;; a simpler version: expect a result from my-delay rather than an arbitrary thunk
+  (define (my-mult x y-promise)
+    (cond [(= x 0) 0]
+          [(= x 1) (my-force y-promise)]
+          [#t (+ (my-force y-promise) (my-mult (- x 1) y-promise))]))
+  (my-mult e1 (my-delay (lambda () e2)))
+
+#+end_src
+  
+*** The Built-in delay and force
+- Our manual implementation helps understand the mechanism, but Racket provides a highly optimized, built-in version.
+- Key Difference:
+  + my-delay is a /regular function/, so you must pass it an already-created thunk:
+    ~(my-delay (lambda () (+ 1 2)))~
+  + delay is a /special form/, so it automatically thunks the expression for us:
+    ~(delay (+ 1 2))~
+    
+** Streams
+- A stream is an *infinite sequence* of values
+  - Key idea: Use a thunk to delay creating most of the sequence.
+- A powerful concept for division of labor:
+  - Stream producer knows how create any number of values
+  - Stream consumer decides how many values to ask fo
+*** Concept
+- A stream is a *thunk* that *when called returns a pair*:
+  ~'(next-answer . next-thunk)~
+*** Using Streams
+#+begin_src racket
+  ;; recursive version
+  (define (number-until stream tester)
+    (if (tester (car (stream)))
+        1
+        (+ 1 (number-until (cdr (stream)) tester))))
+
+  ;; use let to cache the pair
+  (define (number-until stream tester)
+    (let ([pr (stream)])
+      (if (tester (car pr))
+          1
+          (+ 1 (number-until (cdr pr) tester)))))
+
+  ;; iterative version
+  (define (number-until stream tester)
+    (letrec ([f (lambda (stream ans)      ; use letrec for recursion!
+               (let ([pr (stream)])
+                 (if (tester (car pr))
+                     ans
+                     (f (cdr pr) (+ ans 1)))))])
+      (f stream 1)))
+#+end_src
+*** Defining Streams
+- Some examples
+#+begin_src racket
+  ;; correct ones
+  (define ones (lambda () (cons 1 ones)))
+  ;; something end up with infinite loop
+  (define (ones-really-bad (cons 1 ones-really-bad)))
+  (define (ones-bad (lambda () (cons 1 (ones-bad)))))
+#+end_src
+
+#+begin_src racket
+  (define (stream-maker fn arg)
+    (letrec ([f (lambda (x)
+                  (cons x (lambda () (f (fn x arg)))))])
+      (lambda () (f arg))))
+
+#+end_src
