@@ -94,7 +94,7 @@
   - Key idea: Use a thunk to delay creating most of the sequence.
 - A powerful concept for division of labor:
   - Stream producer knows how create any number of values
-  - Stream consumer decides how many values to ask fo
+  - Stream consumer decides how many values to ask for
 *** Concept
 - A stream is a *thunk* that *when called returns a pair*:
   ~'(next-answer . next-thunk)~
